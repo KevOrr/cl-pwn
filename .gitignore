@@ -1,0 +1,6 @@
+# CL
+*.FASL
+*.fasl
+
+# Emacs
+.#*
