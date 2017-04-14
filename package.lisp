@@ -1,4 +1,5 @@
 ;;;; package.lisp
 
 (defpackage #:cl-pwn
-  (:use #:cl #:usocket))
+  (:use #:cl #:usocket)
+  (:export :tube))

@@ -6,3 +6,11 @@
 
 (defun remote (host port)
   (socket-stream (socket-connect host port)))
+
+(defclass tube ()
+  ((default-timeout
+    :initarg default-timeout
+    :initform nil)
+   (newline
+    :initarg newline
+    :initform (coerce #\linefeed 'string))))
