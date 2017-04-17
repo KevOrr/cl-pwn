@@ -4,7 +4,7 @@
   :description "Describe cl-pwn here"
   :author "Your Name <your.name@example.com>"
   :license "Specify license here"
-  :depends-on (#:usocket)
+  :depends-on (#:usocket #:generators)
   :serial t
   :components ((:file "package")
                (:file "cl-pwn")))
