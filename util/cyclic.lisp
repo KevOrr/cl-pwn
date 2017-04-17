@@ -27,7 +27,7 @@
                  (cond
                    ((> s n)
                     (print "cond 1")
-                    (unless (mod n p)
+                    (when (= 0 (mod n p))
                       (loop :for j :from 1 :to (+ p 1) :do
                         (format t "first loop j=~A" j)
                         (yield (aref alphabet (aref a j))))))
