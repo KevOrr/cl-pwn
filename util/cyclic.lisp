@@ -101,12 +101,11 @@
 (defmethod cyclic-find ((subseq string) &key (alphabet *ascii-lowercase*) n)
   (cyclic-find (coerce subseq 'list) :alphabet alphabet :n n))
 
-;; TODO Test this
 (defun gen-find-subseq (subseq gen n)
   ;; Returns the first position of `subseq' in the generator or nil if there is no such position
   (let ((grouped (gen-take-n gen n)))
     (iter:iter (iter:for group in-generator grouped) (iter:for i from 0)
-      (if (equal subseq group)
+      (if (equal subseq (coerce group 'string))
           (return-from gen-find-subseq i)))
     nil))
 
