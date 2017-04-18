@@ -1,4 +1,4 @@
-(in-package "CL-PWN/UTIL")
+(in-package :cl-pwn/util)
 
 (defvar *whitespace* (coerce (list #\Space #\Tab #\Linefeed #\Return (code-char #x0b) #\Page) 'string))
 (defvar *ascii-lowercase* "abcdefghijklmnopqrstuvwxyz")
@@ -59,11 +59,9 @@
                 (force gen))
             'string)))
 
-;; TODO Test this
-(defgeneric cyclic-find (subseq &key alphabet n)
+(defun cyclic-find (subseq &key (alphabet *ascii-lowercase*) (n 4))
   ;; TODO accept integer as subseq
-  (:documentation
-   "cyclic-find subseq &key (alphabet *ascii-lowercase*) (n nil) => integer or nil
+  "cyclic-find subseq &key (alphabet *ascii-lowercase*) (n nil) => integer or nil
 
    Calculates the position of a substring into a De Bruijn sequence.
 
@@ -82,10 +80,10 @@
         n(int): The length of subsequences that should be unique.
 
     Value: the position in the sequence where the subsequence was found,
-           or nil if it was not found"))
+           or nil if it was not found"
 
-;; TODO Test this
-(defmethod cyclic-find ((subseq list) &key (alphabet *ascii-lowercase*) n)
+  (declare (sequence subseq))
+
   ;; TODO pwntools produces a warning message when len(string) > 4
 
   (let ((n (if (or (null n) (= 0 n))
@@ -97,10 +95,6 @@
        (gen-find-subseq subseq (de-bruijn-gen :alphabet alphabet :n n) n))
       (t nil))))
 
-;; TODO Test this
-(defmethod cyclic-find ((subseq string) &key (alphabet *ascii-lowercase*) n)
-  (cyclic-find (coerce subseq 'list) :alphabet alphabet :n n))
-
 (defun gen-find-subseq (subseq gen n)
   ;; Returns the first position of `subseq' in the generator or nil if there is no such position
   (let ((grouped (gen-take-n gen n)))
@@ -109,15 +103,13 @@
           (return-from gen-find-subseq i)))
     nil))
 
-;; TODO Test this
 (defun gen-take-n (gen n)
   (make-generator ()
     (let ((out nil))
-      ;; Warning: hack
-      (loop :while (not (generators::finished? gen)) :do
+      (iter:iter (for item in-generator gen)
         (cond
           ((= n (length out))
            (yield out)
-           (setf out (nconc (cdr out) (list (next gen)))))
+           (setf out (nconc (cdr out) (list item))))
           (t
-           (setf out (nconc out (list (next gen))))))))))
+           (setf out (nconc out (list item)))))))))
