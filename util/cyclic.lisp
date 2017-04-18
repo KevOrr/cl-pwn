@@ -94,20 +94,20 @@
 
     (cond
       ((every (lambda (chr) (find chr alphabet)) subseq)
-       (gen-find subseq (de-bruijn-gen :alphabet alphabet :n n)))
+       (gen-find-subseq subseq (de-bruijn-gen :alphabet alphabet :n n) n))
       (t nil))))
 
 ;; TODO Test this
 (defmethod cyclic-find ((subseq string) &key (alphabet *ascii-lowercase*) n)
-  (cyclic-find (coerce subseq 'list)))
+  (cyclic-find (coerce subseq 'list) :alphabet alphabet :n n))
 
 ;; TODO Test this
-(defun gen-find (subseq gen)
+(defun gen-find-subseq (subseq gen n)
   ;; Returns the first position of `subseq' in the generator or nil if there is no such position
-  (let ((grouped (gen-take-n)))
-    (iter:iter (iter:for group in-genetrator grouped) (iter:for i from 0)
+  (let ((grouped (gen-take-n gen n)))
+    (iter:iter (iter:for group in-generator grouped) (iter:for i from 0)
       (if (equal subseq group)
-          (return-from 'gen-find i)))
+          (return-from gen-find-subseq i)))
     nil))
 
 ;; TODO Test this
