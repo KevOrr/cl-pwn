@@ -113,3 +113,36 @@
            (setf out (nconc (cdr out) (list item))))
           (t
            (setf out (nconc out (list item)))))))))
+
+(defun metasploit-pattern (&optional (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
+  (declare (sequence sets))
+  (make-generator ()
+    (let ((offsets (make-array (length sets)
+                               :element-type 'integer
+                               :initial-element 0)))
+      (loop
+        (loop :for i :in sets
+              :for j :across offsets :do
+                (yield (elt i j)))
+
+        (loop :for i :downfrom (1- (length offsets)) :downto 0 :do
+          (setf (aref offsets i)
+                (mod (1+ (aref offsets i)) (length (nth i sets))))
+          (unless (= 0 (aref offsets i))
+            (return)))
+
+        (if (every #'zerop offsets)
+            (return))))))
+
+(defun metasploit-pattern (&optional (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
+  (declare (sequence sets))
+  (make-generator ()
+    (let ((offsets (make-array (length sets)
+                               :element-type 'integer
+                               :initial-element 0)))
+
+      (loop :do
+        (loop :for i :across offsets
+              :for j :in sets :do
+          (yield (elt i j)))
+            :until (every #'zerop offsets)))))
