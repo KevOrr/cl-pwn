@@ -13,4 +13,6 @@
            #:*digits*
            #:*hex-digits*
            #:*octal-digits*
-           #:*punctuation*))
+           #:*punctuation*
+
+           #:cyclic))

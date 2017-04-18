@@ -15,54 +15,25 @@
   ;; Taken from https://en.wikipedia.org/wiki/De_Bruijn_sequence and pwntools source
   ;; TODO figure out why this algorithm works
 
-  (format t "(de-bruijn ~A ~A)" alphabet n)
-
   (let* ((k (length alphabet))
          (a (make-array (* k n)
                         :element-type 'integer
                         :initial-element 0)))
+
     (labels ((db (s p)
                (make-generator ()
-                 (format t "(db ~A ~A)" s p)
                  (cond
                    ((> s n)
-                    (print "cond 1")
                     (when (= 0 (mod n p))
-                      (loop :for j :from 1 :to (+ p 1) :do
-                        (format t "first loop j=~A" j)
-                        (yield (aref alphabet (aref a j))))))
+                      (loop :for i :across (subseq a 1 (1+ p)) :do
+                        (yield (aref alphabet i)))))
                    (t
-                    (print "cond t")
                     (setf (aref a s) (aref a (- s p)))
                     (yielding (db (1+ s) p))
-                    (loop :for j :from (aref a (- s p)) :to k :do
-                      (format t "second loop j=~A" j)
+                    (loop :for j :from (1+ (aref a (- s p))) :below k :do
                       (setf (aref a s) j)
                       (yielding (db (1+ s) s))))))))
       (db 1 1))))
-
-(defun de-bruijn (&key (alphabet *ascii-lowercase*) (n 4))
-  (let* ((k (length alphabet))
-         (a (make-array (* k n)
-                        :element-type 'fixnum
-                        :initial-element 0))
-         (seq nil))
-
-    (labels ((db (s p)
-               (cond
-                 ((> s n)
-                  (when (= 0 (mod n p)))
-                  (setf seq (nconc
-                             seq
-                             (coerce (subseq a 1 (1+ p)) 'list))))
-                 (t
-                  (setf (aref a s) (aref a (- s p)))
-                  (db (1+ s) p)
-                  (loop :for j :from (1+ (aref a (- s p))) :below k :do
-                    (setf (aref a s) j)
-                    (db (1+ s) s))))))
-      (db 1 1)
-      (map 'list (lambda (i) (aref alphabet i)) seq))))
 
 (defun cyclic (&key (length nil) (alphabet *ascii-lowercase*) (n 4))
   "cyclic &key (length nil) (alphabet *ascii-lowercase*) (n 4) => string
@@ -77,23 +48,13 @@
 
    Value:
        string: represents the de Bruijn sequence of maximum length `length',
-               composed of alphabet `alhpabet', with distinct subsequences of length `n'
+               composed of alphabet `alphabet', with distinct subsequences of length `n'
+  "
 
-    Example:
-        (cyclic :alphabet \"ABC\" :n 3)
-        => \"AAABAACABBABCACBACCBBBCBCCC\"
-        (cyclic :length 20)
-        \"aaaabaaacaaadaaaeaaa\"
-        (let ((alphabet (loop :for i :from 0 :below 30 :collect i))
-              (n 3))
-          (values
-           (expt (length alphabet) n)
-           (length (cyclic :alphabet alphabet :n n))))
-        =>  27000, 27000
-    "
+  (assert (or (null length) (<= length (expt (length alphabet) n))))
 
-  (assert (or (null length) (>= (expt (length alphabet) n) length)))
-
-  (coerce (loop :repeat (or length (expt (length alphabet) n))
-                :for i in (de-bruijn :alphabet alphabet :n n) :collect i)
-          'string))
+  (let ((gen (de-bruijn-gen :alphabet alphabet :n n)))
+    (coerce (if length
+                (loop :repeat length :collect (next gen))
+                (force gen))
+            'string)))
