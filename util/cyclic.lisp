@@ -58,3 +58,47 @@
                 (loop :repeat length :collect (next gen))
                 (force gen))
             'string)))
+
+(defgeneric cyclic-find (subseq &key alphabet n)
+  ;; TODO accept integer as subseq
+  (:documentation
+   "cyclic-find subseq &key (alphabet *ascii-lowercase*) (n nil) => integer or nil
+
+   Calculates the position of a substring into a De Bruijn sequence.
+
+    .. todo:
+
+       'Calculates' is an overstatement. It simply traverses the list.
+
+       There exists better algorithms for this, but they depend on generating
+       the De Bruijn sequence in another fashion. Somebody should look at it:
+
+       https://www.sciencedirect.com/science/article/pii/S0012365X00001175
+
+    Arguments:
+        subseq: The subsequence to look for. This can be a string, or a list
+        alphabet: List or string to generate the sequence over.
+        n(int): The length of subsequences that should be unique.
+
+    Value: the position in the sequence where the subsequence was found,
+           or nil if it was not found"))
+
+(defmethod cyclic-find ((subseq list) &key (alphabet *ascii-lowercase*) n)
+  ;; TODO pwntools produces a warning message when len(string) > 4
+
+  (let ((n (if (or (null n) (= 0 n))
+               (length subseq)
+               n)))
+
+    (cond
+      ((every (lambda (chr) (find chr alphabet)) subseq)
+       (gen-find subseq (de-bruijn-gen :alphabet alphabet :n n)))
+      (t nil))))
+
+(defmethod cyclic-find ((subseq string) &key (alphabet *ascii-lowercase*) n)
+  (cyclic-find (coerce subseq 'list)))
+
+(defun gen-find (subseq gen)
+  ;; Returns the first position of `subseq' in the generator or nil if there is no such position
+  ;; TODO
+  )
