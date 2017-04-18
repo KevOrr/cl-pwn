@@ -59,6 +59,7 @@
                 (force gen))
             'string)))
 
+;; TODO Test this
 (defgeneric cyclic-find (subseq &key alphabet n)
   ;; TODO accept integer as subseq
   (:documentation
@@ -83,6 +84,7 @@
     Value: the position in the sequence where the subsequence was found,
            or nil if it was not found"))
 
+;; TODO Test this
 (defmethod cyclic-find ((subseq list) &key (alphabet *ascii-lowercase*) n)
   ;; TODO pwntools produces a warning message when len(string) > 4
 
@@ -95,10 +97,28 @@
        (gen-find subseq (de-bruijn-gen :alphabet alphabet :n n)))
       (t nil))))
 
+;; TODO Test this
 (defmethod cyclic-find ((subseq string) &key (alphabet *ascii-lowercase*) n)
   (cyclic-find (coerce subseq 'list)))
 
+;; TODO Test this
 (defun gen-find (subseq gen)
   ;; Returns the first position of `subseq' in the generator or nil if there is no such position
-  ;; TODO
-  )
+  (let ((grouped (gen-take-n)))
+    (iter:iter (iter:for group in-genetrator grouped) (iter:for i from 0)
+      (if (equal subseq group)
+          (return-from 'gen-find i)))
+    nil))
+
+;; TODO Test this
+(defun gen-take-n (gen n)
+  (make-generator ()
+    (let ((out nil))
+      ;; Warning: hack
+      (loop :while (not (generators::finished? gen)) :do
+        (cond
+          ((= n (length out))
+           (yield out)
+           (setf out (nconc (cdr out) (list (next gen)))))
+          (t
+           (setf out (nconc out (list (next gen))))))))))
