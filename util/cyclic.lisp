@@ -55,7 +55,7 @@
 
   (let ((gen (de-bruijn-gen :alphabet alphabet :n n)))
     (coerce (if length
-                (loop :repeat length :collect (next gen))
+                (iter:iter (iter:for i in-generator gen) (iter:repeat length) (iter:collect i))
                 (force gen))
             'string)))
 
@@ -106,7 +106,7 @@
 (defun gen-take-n (gen n)
   (make-generator ()
     (let ((out nil))
-      (iter:iter (for item in-generator gen)
+      (iter:iter (iter:for item in-generator gen)
         (cond
           ((= n (length out))
            (yield out)
