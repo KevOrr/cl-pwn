@@ -163,24 +163,3 @@
             subseq)
      (gen-find-subseq subseq (metasploit-pattern-gen :sets sets) (length subseq)))
     (t nil)))
-
-
-(defun gen-find-subseq (subseq gen n)
-  "Returns the first position of `subseq' in the generator or nil if there is no such position"
-
-  (let ((grouped (gen-take-n gen n)))
-    (iter:iter (iter:for group in-generator grouped) (iter:for i from 0)
-      (if (equal subseq (coerce group 'string))
-          (return-from gen-find-subseq i)))
-    nil))
-
-(defun gen-take-n (gen n)
-  (make-generator ()
-    (let ((out nil))
-      (iter:iter (iter:for item in-generator gen)
-        (cond
-          ((= n (length out))
-           (yield out)
-           (setf out (nconc (cdr out) (list item))))
-          (t
-           (setf out (nconc out (list item)))))))))
