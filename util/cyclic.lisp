@@ -10,10 +10,13 @@
 (defvar *punctuation* "!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~")
 (defvar *printable* (concatenate 'string *digits* *ascii-letters* *punctuation* *whitespace*))
 
+
+;; de Bruijn generation
+
+;; TODO figure out why this algorithm works
 (defun de-bruijn-gen (&key (alphabet *ascii-lowercase*) (n 4))
-  "Generator for a sequence of unique substrings of length n"
-  ;; Taken from https://en.wikipedia.org/wiki/De_Bruijn_sequence and pwntools source
-  ;; TODO figure out why this algorithm works
+  "Generator for a sequence of unique substrings of length n
+  Taken from https://en.wikipedia.org/wiki/De_Bruijn_sequence and pwntools source"
 
   (let* ((k (length alphabet))
          (a (make-array (* k n)
@@ -48,8 +51,7 @@
 
    Value:
        string: represents the de Bruijn sequence of maximum length `length',
-               composed of alphabet `alphabet', with distinct subsequences of length `n'
-  "
+               composed of alphabet `alphabet', with distinct subsequences of length `n'"
 
   (assert (or (null length) (<= length (expt (length alphabet) n))))
 
@@ -59,8 +61,10 @@
                 (force gen))
             'string)))
 
+;; TODO accept integer as subseq
+;; TODO is `n' really necessary here? cyclic-metasploit-find doesn't include it
+;; TODO pwntools produces a warning message when len(string) > 4
 (defun cyclic-find (subseq &key (alphabet *ascii-lowercase*) (n 4))
-  ;; TODO accept integer as subseq
   "cyclic-find subseq &key (alphabet *ascii-lowercase*) (n nil) => integer or nil
 
    Calculates the position of a substring into a De Bruijn sequence.
@@ -83,8 +87,6 @@
            or nil if it was not found"
 
   (declare (sequence subseq))
-
-  ;; TODO pwntools produces a warning message when len(string) > 4
 
   (let ((n (if (or (null n) (= 0 n))
                (length subseq)
@@ -137,7 +139,15 @@
         :until (every #'zerop offsets)))))
 
 (defun cyclic-metasploit (&key length (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
-  (let ((gen (metasploit-pattern-gen sets)))
+  "A simple wrapper over :func:`metasploit_pattern`. This function returns a
+    string of length `length`.
+
+    Arguments:
+        length: The desired length of the string or None if the entire sequence is desired.
+        sets: List of strings to generate the sequence over."
+
+
+  (let ((gen (metasploit-pattern-gen :sets sets)))
     (coerce (if length
                 (iter:iter
                   (iter:repeat length)
