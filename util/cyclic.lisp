@@ -1,14 +1,5 @@
 (in-package :cl-pwn/util)
 
-(defvar *whitespace* (coerce (list #\Space #\Tab #\Linefeed #\Return (code-char #x0b) #\Page) 'string))
-(defvar *ascii-lowercase* "abcdefghijklmnopqrstuvwxyz")
-(defvar *ascii-uppercase* "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-(defvar *ascii-letters* (concatenate 'string *ascii-lowercase* *ascii-uppercase*))
-(defvar *digits* "0123456789")
-(defvar *hex-digits* "0123456789abcdefABCDEF")
-(defvar *octal-digits* "01234567")
-(defvar *punctuation* "!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~")
-(defvar *printable* (concatenate 'string *digits* *ascii-letters* *punctuation* *whitespace*))
 
 
 ;; de Bruijn generation

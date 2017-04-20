@@ -8,4 +8,5 @@
   :serial t
   :components ((:file "package")
                (:file "cl-pwn")
+               (:file "util/string-constants")
                (:file "util/cyclic")))
