@@ -116,20 +116,19 @@
                                :element-type 'integer
                                :initial-element 0)))
 
-      ;; TODO this looks horrible, maybe iter instead?
-      (loop
-        :do (loop
-              :for i :in sets
-              :for j :across offsets
-              :do (yield (elt i j)))
+      (iter:iter
+        (iter:iter
+          (iter:for i :in sets)
+          (iter:for j :in-vector offsets)
+          (yield (elt i j)))
 
-            (loop
-              :for i :downfrom (1- (length offsets)) :to 0
-              :do (setf (aref offsets i)
-                        (mod (1+ (aref offsets i)) (length (nth i sets))))
-              :while (= 0 (aref offsets i)))
+        (iter:iter
+          (iter:for i :from (1- (length offsets)) :downto 0)
+          (setf (aref offsets i)
+                (mod (1+ (aref offsets i)) (length (nth i sets))))
+          (iter:while (= 0 (aref offsets i))))
 
-        :until (every #'zerop offsets)))))
+        (iter:until (every #'zerop offsets))))))
 
 (defun cyclic-metasploit (&key length (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
   "A simple wrapper over :func:`metasploit_pattern`. This function returns a
