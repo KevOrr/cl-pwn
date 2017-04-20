@@ -114,20 +114,36 @@
           (t
            (setf out (nconc out (list item)))))))))
 
-(defun metasploit-pattern (&optional (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
+(defun metasploit-pattern-gen (&optional (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
   (declare (sequence sets))
   (make-generator ()
     (let ((offsets (make-array (length sets)
                                :element-type 'integer
                                :initial-element 0)))
-      (loop :do
-        (loop :for i :in sets
+
+      ;; TODO this looks horrible, maybe iter instead?
+      (loop
+        :do (loop
+              :for i :in sets
               :for j :across offsets
               :do (yield (elt i j)))
 
-        (loop :for i :downfrom (1- (length offsets)) :to 0
+            (loop
+              :for i :downfrom (1- (length offsets)) :to 0
               :do (setf (aref offsets i)
                         (mod (1+ (aref offsets i)) (length (nth i sets))))
               :while (= 0 (aref offsets i)))
 
         :until (every #'zerop offsets)))))
+
+(defun cyclic-metasploit (&key length (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
+  (let ((gen (metasploit-pattern-gen sets)))
+    (coerce (if length
+                (iter:iter
+                  (iter:repeat length)
+                  (iter:for i in-generator gen)
+                  (iter:collect i))
+                (iter:iter
+                  (iter:for i in-generator gen)
+                  (iter:collect i)))
+            'string)))
