@@ -97,26 +97,19 @@
        (gen-find-subseq subseq (de-bruijn-gen :alphabet alphabet :n n) n))
       (t nil))))
 
-(defun gen-find-subseq (subseq gen n)
-  ;; Returns the first position of `subseq' in the generator or nil if there is no such position
-  (let ((grouped (gen-take-n gen n)))
-    (iter:iter (iter:for group in-generator grouped) (iter:for i from 0)
-      (if (equal subseq (coerce group 'string))
-          (return-from gen-find-subseq i)))
-    nil))
 
-(defun gen-take-n (gen n)
-  (make-generator ()
-    (let ((out nil))
-      (iter:iter (iter:for item in-generator gen)
-        (cond
-          ((= n (length out))
-           (yield out)
-           (setf out (nconc (cdr out) (list item))))
-          (t
-           (setf out (nconc out (list item)))))))))
+;; Metasploit pattern
 
-(defun metasploit-pattern-gen (&optional (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
+(defun metasploit-pattern-gen (&key (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
+  "Generator for a sequence of characters as per Metasploit Framework's
+    `Rex::Text.pattern_create' (aka `pattern_create.rb').
+
+    The returned generator will yield up to
+    (* (length sets) (apply #'* (map 'list #'length sets))) elements.
+
+    Arguments:
+        sets: List of strings to generate the sequence over."
+
   (declare (sequence sets))
   (make-generator ()
     (let ((offsets (make-array (length sets)
@@ -157,3 +150,47 @@
                   (iter:for i in-generator gen)
                   (iter:collect i)))
             'string)))
+
+;; TODO accept integer as subseq
+;; TODO pwntools produces a warning message when len(string) > 4
+(defun cyclic-metasploit-find (subseq &key (sets (list *ascii-uppercase* *ascii-lowercase* *digits*)))
+  "Calculates the position of a substring into a Metasploit Pattern sequence.
+
+  Arguments:
+      subseq: The subsequence to look for. This can be a string or an
+              integer. If an integer is provided it will be packed as a
+              little endian integer.
+      sets: List of strings to generate the sequence over."
+
+  (declare (sequence subseq))
+
+  ;; make sure each character in `subseq' is in at least one of `sets'
+  (cond
+    ((every (lambda (chr)
+              (some (lambda (alphabet)
+                      (find chr alphabet))
+                    sets))
+            subseq)
+     (gen-find-subseq subseq (metasploit-pattern-gen :sets sets) (length subseq)))
+    (t nil)))
+
+
+(defun gen-find-subseq (subseq gen n)
+  "Returns the first position of `subseq' in the generator or nil if there is no such position"
+
+  (let ((grouped (gen-take-n gen n)))
+    (iter:iter (iter:for group in-generator grouped) (iter:for i from 0)
+      (if (equal subseq (coerce group 'string))
+          (return-from gen-find-subseq i)))
+    nil))
+
+(defun gen-take-n (gen n)
+  (make-generator ()
+    (let ((out nil))
+      (iter:iter (iter:for item in-generator gen)
+        (cond
+          ((= n (length out))
+           (yield out)
+           (setf out (nconc (cdr out) (list item))))
+          (t
+           (setf out (nconc out (list item)))))))))
