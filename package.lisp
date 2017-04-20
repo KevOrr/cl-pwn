@@ -15,4 +15,7 @@
            #:*octal-digits*
            #:*punctuation*
 
-           #:cyclic))
+           #:cyclic
+           #:cyclic-find
+           #:cyclic-metasploit
+           #:cyclic-metasploit-find))

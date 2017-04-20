@@ -7,5 +7,5 @@
   :depends-on (#:usocket #:generators)
   :serial t
   :components ((:file "package")
-               (:file "cl-pwn")))
-
+               (:file "cl-pwn")
+               (:file "util/cyclic")))
