@@ -12,16 +12,17 @@
      ,@body))
 
 (defmacro define-binary-class (name &body body)
-  (with-gensyms (typevar objectvar streamvar)
-    `(progn
-       (defclass ,name ()
-         ,(mapcar #'binary-class-slot->defclass-slot (first body)))
+  (let ((slots (first body)))
+    (with-gensyms (typevar objectvar streamvar)
+      `(progn
+         (defclass ,name ()
+           ,(mapcar #'binary-class-slot->defclass-slot slots))
 
-       (defmethod read-value ((,typevar (eql ',name)) ,streamvar &key)
-         (let ((,objectvar (make-instance ',name)))
-           (with-slots ,(mapcar #'first (first body)) ,objectvar
-             ,@(mapcar #'(lambda (x) (slot->read-value x streamvar)) (first body)))
-           ,objectvar)))))
+         (defmethod read-value ((,typevar (eql ',name)) ,streamvar &key)
+           (let ((,objectvar (make-instance ',name)))
+             (with-slots ,(mapcar #'first slots) ,objectvar
+               ,@(mapcar #'(lambda (x) (slot->read-value x streamvar)) slots))
+             ,objectvar))))))
 
 (defun mklist (x) (if (listp x) x (list x)))
 
