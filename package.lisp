@@ -5,7 +5,7 @@
   (:export :tube))
 
 (defpackage #:cl-pwn/util
-  (:use #:cl #:cl-pwn #:generators)
+  (:use #:cl #:generators)
   (:export #:*whitespace*
            #:*ascii-lowercase*
            #:*ascii-uppercase*
