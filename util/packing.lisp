@@ -54,25 +54,6 @@
     (let ((name (first spec)))
       `(,name :initarg ,(as-keyword name) :accessor ,name))))
 
-(defmacro define-binary-class (name (&rest superclasses) &body body)
-  (let ((slots (first body)))
-    (with-gensyms (objectvar streamvar)
-      `(progn
-         (defclass ,name ,superclasses
-           ,(mapcar #'binary-class-slot->defclass-slot slots))
-
-         (eval-when (:compile-toplevel :load-toplevel :execute)
-           (setf (get ',name 'slots) ',(mapcar #'first slots))
-           (setf (get ',name 'superclasses) ',superclasses))
-
-         (defmethod read-object progn ((,objectvar ,name) ,streamvar)
-           (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
-             ,@(mapcar #'(lambda (x) (binary-class-slot->read-value x streamvar)) slots)))
-
-         (defmethod write-object progn ((,objectvar ,name) ,streamvar)
-           (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
-             ,@(mapcar #'(lambda (x) (binary-class-slot->write-value x streamvar)) slots)))))))
-
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun direct-slots (name)
     (copy-list (get name 'slots))))
@@ -91,8 +72,78 @@
   (defun new-class-all-slots (slots superclasses)
     (nconc (mapcan #'all-slots superclasses) (mapcar #'first slots))))
 
+(defmacro define-binary-type (name (&rest args) &body spec)
+  (with-gensyms (type)
+    `(progn
+       ,(destructuring-bind ((in) &body body) (rest (assoc :reader spec))
+          `(defmethod read-value ((,type (eql ',name)) ,in &key ,@args)
+             ,@body))
+       ,(destructuring-bind ((out value) &body body) (rest (assoc :writer spec))
+          `(defmethod write-value ((,type (eql ',name)) ,out ,value &key ,@args)
+             ,@body)))))
+
+(defmacro define-generic-binary-class (name (&rest superclasses) slots read-method)
+  (with-gensyms (objectvar streamvar)
+    `(progn
+       (eval-when (:compile-toplevel :load-toplevel :execute)
+         (setf (get ',name 'slots) ',(mapcar #'first slots))
+         (setf (get ',name 'superclasses) ',superclasses))
+
+       (defclass ,name ,superclasses
+         ,(mapcar #'binary-class-slot->defclass-slot slots))
+
+       ,read-method
+
+       (defmethod write-object progn ((,objectvar ,name) ,streamvar)
+         (declare (ignorable ,streamvar))
+         (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
+           ,@(mapcar #'(lambda (x) (binary-class-slot->write-value x streamvar)) slots))))))
+
+(defmacro define-binary-class (name (&rest superclasses) &body body)
+  (let ((slots (first body)))
+    (with-gensyms (objectvar streamvar)
+      `(progn
+         (define-generic-binary-class
+             ,name ,superclasses ,slots
+             (defmethod read-object progn ((,objectvar ,name) ,streamvar)
+               (declare (ignorable ,streamvar))
+               (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
+                 ,@(mapcar #'(lambda (x) (binary-class-slot->read-value x streamvar)) slots))))))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun binary-class-slot->binding (spec stream)
+    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
+      `(,name (read-value ',type ,stream ,@args)))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun binary-class-slot->keyword-arg (spec)
+    (let ((name (first spec)))
+      `(,(as-keyword name) ,name))))
+
+(defmacro define-tagged-binary-class (name (&rest superclasses) slots &rest options)
+  (with-gensyms (typevar objectvar streamvar)
+    `(define-generic-binary-class
+         ,name ,superclasses ,slots
+         (defmethod read-value ((,typevar (eql ',name)) ,streamvar &key)
+           (let* ,(mapcar #'(lambda (x) (binary-class-slot->binding x streamvar)) slots)
+             (let ((,objectvar (make-instance
+                                ,@(or (cdr (assoc :dispatch options))
+                                      (error "Must supply :dispath form."))
+                                ,@(mapcan #'binary-class-slot->keyword-arg slots))))
+               (read-object ,objectvar ,streamvar)
+               ,objectvar))))))
 
 ;; Testing above functions/macros
+(define-binary-type iso-8859-1-string (length)
+  (:reader (in)
+           (let ((string (make-string length)))
+             (dotimes (i length)
+               (setf (char string i) (code-char (read-byte in))))
+             string))
+  (:writer (out string)
+           (dotimes (i length)
+             (write-byte (char-code (char string i)) out))))
+
 (define-binary-class id3-tag ()
   ((identifier      (iso-8859-1-string :length 3))
    (major-version   u1)
