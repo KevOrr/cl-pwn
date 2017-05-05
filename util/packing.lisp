@@ -22,29 +22,37 @@
   (:method-combination progn :most-specific-last)
   (:documentation "Write out the slots of object to the stream."))
 
-(defun mklist (x) (if (listp x) x (list x)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun mklist (x)
+    (if (listp x) x (list x))))
 
-(defun normalize-slot-spec (spec)
-  (list (first spec) (mklist (second spec))))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun normalize-slot-spec (spec)
+    (list (first spec) (mklist (second spec)))))
 
-(defun binary-class-slot->read-value (spec stream)
-  (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
-    `(setf ,name (read-value ',type ,stream ,@args))))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun binary-class-slot->read-value (spec stream)
+    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
+      `(setf ,name (read-value ',type ,stream ,@args)))))
 
-(defun binary-class-slot->write-value (spec stream)
-  (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
-    `(write-value ',type ,stream ,name ,@args)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun binary-class-slot->write-value (spec stream)
+    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
+      `(write-value ',type ,stream ,name ,@args))))
 
 
 (defmacro with-gensyms ((&rest names) &body body)
   `(let ,(loop :for n :in names :collect `(,n (gensym)))
      ,@body))
 
-(defun as-keyword (sym) (intern (string sym) :keyword))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun as-keyword (sym)
+    (intern (string sym) :keyword)))
 
-(defun binary-class-slot->defclass-slot (spec)
-  (let ((name (first spec)))
-    `(,name :initarg ,(as-keyword name) :accessor ,name)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun binary-class-slot->defclass-slot (spec)
+    (let ((name (first spec)))
+      `(,name :initarg ,(as-keyword name) :accessor ,name))))
 
 (defmacro define-binary-class (name (&rest superclasses) &body body)
   (let ((slots (first body)))
@@ -65,19 +73,23 @@
            (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
              ,@(mapcar #'(lambda (x) (binary-class-slot->write-value x streamvar)) slots)))))))
 
-(defun direct-slots (name)
-  (copy-list (get name 'slots)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun direct-slots (name)
+    (copy-list (get name 'slots))))
 
-(defun inherited-slots (name)
-  (loop :for super :in (get name 'superclasses)
-        :nconc (direct-slots super)
-        :nconc (inherited-slots super)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun inherited-slots (name)
+    (loop :for super :in (get name 'superclasses)
+          :nconc (direct-slots super)
+          :nconc (inherited-slots super))))
 
-(defun all-slots (name)
-  (nconc (direct-slots name) (inherited-slots name)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun all-slots (name)
+    (nconc (direct-slots name) (inherited-slots name))))
 
-(defun new-class-all-slots (slots superclasses)
-  (nconc (mapcan #'all-slots superclasses) (mapcar #'first slots)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun new-class-all-slots (slots superclasses)
+    (nconc (mapcan #'all-slots superclasses) (mapcar #'first slots))))
 
 
 ;; Testing above functions/macros
