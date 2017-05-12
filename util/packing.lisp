@@ -1,6 +1,8 @@
 (in-package :cl-pwn/util)
 
 ;; Begin awesome PCL chapter 24 stuff
+(defvar *in-progress-objects* nil)
+
 (defgeneric read-value (type stream &key &allow-other-keys)
   (:documentation "Read a single value of the given type from the stream."))
 
@@ -20,9 +22,24 @@
   (:method-combination progn :most-specific-last)
   (:documentation "Fill in the slots of object from stream."))
 
+(defmethod read-object :around (object stream)
+  (declare (ignore stream))
+  (let ((*in-progress-objects* (cons object *in-progress-objects*)))
+    (call-next-method)))
+
 (defgeneric write-object (object stream)
   (:method-combination progn :most-specific-last)
   (:documentation "Write out the slots of object to the stream."))
+
+(defmethod write-object :around (object stream)
+  (declare (ignore stream))
+  (let ((*in-progress-objects* (cons object *in-progress-objects*)))
+    (call-next-method)))
+
+(defun current-binary-object () (first *in-progress-objects*))
+
+(defun parent-of-type (type)
+  (find-if #'(lambda (x) (typep x type)) *in-progress-objects*))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun mklist (x)
@@ -75,14 +92,24 @@
     (nconc (mapcan #'all-slots superclasses) (mapcar #'first slots))))
 
 (defmacro define-binary-type (name (&rest args) &body spec)
-  (with-gensyms (type)
-    `(progn
-       ,(destructuring-bind ((in) &body body) (rest (assoc :reader spec))
-          `(defmethod read-value ((,type (eql ',name)) ,in &key ,@args)
-             ,@body))
-       ,(destructuring-bind ((out value) &body body) (rest (assoc :writer spec))
-          `(defmethod write-value ((,type (eql ',name)) ,out ,value &key ,@args)
-             ,@body)))))
+  (ecase (length spec)
+    (1
+     (with-gensyms (type stream val)
+       (destructuring-bind (derived-from &rest derived-args) (mklist (first spec))
+         `(progn
+            (defmethod read-value ((,type (eql ',name)) ,stream &key ,@args)
+              (read-value ',derived-from ,stream ,@derived-args))
+            (defmethod write-value ((,type (eql ',name)) ,stream ,val &key ,@args)
+              (write-value ',derived-from ,stream ,val ,@derived-args))))))
+    (2
+     (with-gensyms (type)
+       `(progn
+          ,(destructuring-bind ((in) &body body) (rest (assoc :reader spec))
+             `(defmethod read-value ((,type (eql ',name)) ,in &key ,@args)
+                ,@body))
+          ,(destructuring-bind ((out value) &body body) (rest (assoc :writer spec))
+             `(defmethod write-value ((,type (eql ',name)) ,out ,value &key ,@args)
+                ,@body)))))))
 
 (defmacro define-generic-binary-class (name (&rest superclasses) slots read-method)
   (with-gensyms (objectvar streamvar)
@@ -147,6 +174,18 @@
              (loop :for i :from max-byte-position :downto 0 :by 8 :do
                (write-byte (ldb (byte 8 i) num) out)))))
 
+(define-binary-type ub8 ()
+  (unsigned-big :word-size 8))
+
+(define-binary-type ub16 ()
+  (unsigned-big :word-size 16))
+
+(define-binary-type ub32 ()
+  (unsigned-big :word-size 32))
+
+(define-binary-type ub64 ()
+  (unsigned-big :word-size 64))
+
 (define-binary-type unsigned-little ((word-size 32))
   (:reader (in)
            (let ((result 0)
@@ -157,6 +196,18 @@
            (let ((max-byte-position (* 8 (floor (1- word-size) 8))))
              (loop :for i :from 0 :to max-byte-position :by 8 :do
                (write-byte (ldb (byte 8 i) num) out)))))
+
+(define-binary-type ul8 ()
+  (unsigned-little :word-size 8))
+
+(define-binary-type ul16 ()
+  (unsigned-little :word-size 16))
+
+(define-binary-type ul32 ()
+  (unsigned-little :word-size 32))
+
+(define-binary-type ul64 ()
+  (unsigned-little :word-size 64))
 
 (define-binary-type iso-8859-1-string (length)
   (:reader (in)
@@ -178,3 +229,38 @@
 
 (define-binary-class id3-tag-extra (id3-tag)
   ((extra-stuff     (id3-frames :tag-size size))))
+
+;; Test unsigned-bug and unsigned-little
+(define-binary-class packing-test ()
+  ((ul8 ul8)
+   (ul16 ul16)
+   (ul32 ul32)
+   (ul64 ul64)
+   (ub8 ub8)
+   (ub16 ub16)
+   (ub32 ub32)
+   (ub64 ub64)))
+
+(defun test-packing ()
+  (let ((testobj (make-instance 'packing-test
+                                :ul8  #x01
+                                :ul16 #x0102
+                                :ul32 #x01020304
+                                :ul64 #x0102030405060708
+                                :ub8  #x01
+                                :ub16 #x0102
+                                :ub32 #x01020304
+                                :ub64 #x0102030405060708)))
+    (with-open-file (stream #p"testout" :direction :output :element-type '(unsigned-byte 8) :if-exists :supersede)
+      (write-object testobj stream))
+
+    (with-open-file (stream #p"testout" :element-type '(unsigned-byte 8))
+      (let ((*print-base* 16))
+        (loop :for i := (read-byte stream nil :eof) :until (eq i :eof) :do
+          (format t "~2,'0d" i))))
+
+    (with-open-file (stream #p"testout" :element-type '(unsigned-byte 8))
+      (let ((newobj (make-instance 'packing-test)))
+        ;; TODO slots aren't getting filled
+        (read-object newobj stream)
+        newobj))))

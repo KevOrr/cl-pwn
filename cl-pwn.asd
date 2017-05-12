@@ -10,4 +10,5 @@
                (:file "cl-pwn")
                (:file "util/generator-utils")
                (:file "util/string-constants")
-               (:file "util/cyclic")))
+               (:file "util/cyclic")
+               (:file "util/packing")))
