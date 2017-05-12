@@ -2,7 +2,8 @@
 
 ;; Begin awesome PCL chapter 24 stuff
 (defgeneric read-value (type stream &key &allow-other-keys)
-  (:documentation "Read a value of the given type from the stream."))
+  (:documentation "Read a single value of the given type from the stream."))
+
 (defmethod read-value ((type symbol) stream &key)
   (let ((object (make-instance type)))
     (read-object object stream)
@@ -10,6 +11,7 @@
 
 (defgeneric write-value (type stream value &key &allow-other-keys)
   (:documentation "Write a value as the given type to the stream."))
+
 (defmethod write-value ((type symbol) stream value &key)
   (assert (typep value type))
   (write-object value stream))
@@ -134,6 +136,28 @@
                ,objectvar))))))
 
 ;; Testing above functions/macros
+(define-binary-type unsigned-big ((word-size 32))
+  (:reader (in)
+           (let ((result 0)
+                 (max-byte-position (* 8 (floor (1- word-size) 8))))
+             (loop :for i :from max-byte-position :downto 0 :by 8 :do
+               (setf (ldb (byte 8 i) result) (read-byte in)))))
+  (:writer (out num)
+           (let ((max-byte-position (* 8 (floor (1- word-size) 8))))
+             (loop :for i :from max-byte-position :downto 0 :by 8 :do
+               (write-byte (ldb (byte 8 i) num) out)))))
+
+(define-binary-type unsigned-little ((word-size 32))
+  (:reader (in)
+           (let ((result 0)
+                 (max-byte-position (* 8 (floor (1- word-size) 8))))
+             (loop :for i :from 0 :to max-byte-position :by 8 :do
+               (setf (ldb (byte 8 i) result) (read-byte in)))))
+  (:writer (out num)
+           (let ((max-byte-position (* 8 (floor (1- word-size) 8))))
+             (loop :for i :from 0 :to max-byte-position :by 8 :do
+               (write-byte (ldb (byte 8 i) num) out)))))
+
 (define-binary-type iso-8859-1-string (length)
   (:reader (in)
            (let ((string (make-string length)))
