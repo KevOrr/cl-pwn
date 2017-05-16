@@ -93,24 +93,27 @@
     (nconc (mapcan #'all-slots superclasses) (mapcar #'first slots))))
 
 (defmacro define-binary-type (name (&rest args) &body spec)
-  (ecase (length spec)
-    (1
-     (with-gensyms (type stream val)
-       (destructuring-bind (derived-from &rest derived-args) (mklist (first spec))
+  (let ((name (or name (gentemp))))
+    (ecase (length spec)
+      (1
+       (with-gensyms (type stream val)
+         (destructuring-bind (derived-from &rest derived-args) (mklist (first spec))
+           `(progn
+              (defmethod read-value ((,type (eql ',name)) ,stream &key ,@args)
+                (read-value ',derived-from ,stream ,@derived-args))
+              (defmethod write-value ((,type (eql ',name)) ,stream ,val &key ,@args)
+                (write-value ',derived-from ,stream ,val ,@derived-args))
+              ',name))))
+      (2
+       (with-gensyms (type)
          `(progn
-            (defmethod read-value ((,type (eql ',name)) ,stream &key ,@args)
-              (read-value ',derived-from ,stream ,@derived-args))
-            (defmethod write-value ((,type (eql ',name)) ,stream ,val &key ,@args)
-              (write-value ',derived-from ,stream ,val ,@derived-args))))))
-    (2
-     (with-gensyms (type)
-       `(progn
-          ,(destructuring-bind ((in) &body body) (rest (assoc :reader spec))
-             `(defmethod read-value ((,type (eql ',name)) ,in &key ,@args)
-                ,@body))
-          ,(destructuring-bind ((out value) &body body) (rest (assoc :writer spec))
-             `(defmethod write-value ((,type (eql ',name)) ,out ,value &key ,@args)
-                ,@body)))))))
+            ,(destructuring-bind ((in) &body body) (rest (assoc :reader spec))
+               `(defmethod read-value ((,type (eql ',name)) ,in &key ,@args)
+                  ,@body))
+            ,(destructuring-bind ((out value) &body body) (rest (assoc :writer spec))
+               `(defmethod write-value ((,type (eql ',name)) ,out ,value &key ,@args)
+                  ,@body))
+            ',name))))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun binary-class-slot->read-value (spec stream)
@@ -122,7 +125,7 @@
     (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
       `(write-value ',type ,stream ,name ,@args))))
 
-(defmacro define-generic-binary-class (name (&rest superclasses) slots read-method)
+(defmacro define-generic-binary-class (name (&rest superclasses) slots &body read-method)
   (with-gensyms (objectvar streamvar)
     `(progn
        (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -132,7 +135,7 @@
        (defclass ,name ,superclasses
          ,(mapcar #'binary-class-slot->defclass-slot slots))
 
-       ,read-method
+       ,(first read-method)
 
        (defmethod write-object progn ((,objectvar ,name) ,streamvar)
          (declare (ignorable ,streamvar))
@@ -142,13 +145,11 @@
 (defmacro define-binary-class (name (&rest superclasses) &body body)
   (let ((slots (first body)))
     (with-gensyms (objectvar streamvar)
-      `(progn
-         (define-generic-binary-class
-             ,name ,superclasses ,slots
-             (defmethod read-object progn ((,objectvar ,name) ,streamvar)
-               (declare (ignorable ,streamvar))
-               (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
-                 ,@(mapcar #'(lambda (x) (binary-class-slot->read-value x streamvar)) slots))))))))
+      `(define-generic-binary-class ,name ,superclasses ,slots
+         (defmethod read-object progn ((,objectvar ,name) ,streamvar)
+           (declare (ignorable ,streamvar))
+           (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
+             ,@(mapcar #'(lambda (x) (binary-class-slot->read-value x streamvar)) slots)))))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun binary-class-slot->binding (spec stream)
@@ -162,16 +163,15 @@
 
 (defmacro define-tagged-binary-class (name (&rest superclasses) slots &rest options)
   (with-gensyms (typevar objectvar streamvar)
-    `(define-generic-binary-class
-         ,name ,superclasses ,slots
-         (defmethod read-value ((,typevar (eql ',name)) ,streamvar &key)
-           (let* ,(mapcar #'(lambda (x) (binary-class-slot->binding x streamvar)) slots)
-             (let ((,objectvar (make-instance
-                                ,@(or (cdr (assoc :dispatch options))
-                                      (error "Must supply :dispath form."))
-                                ,@(mapcan #'binary-class-slot->keyword-arg slots))))
-               (read-object ,objectvar ,streamvar)
-               ,objectvar))))))
+    `(define-generic-binary-class ,name ,superclasses ,slots
+       (defmethod read-value ((,typevar (eql ',name)) ,streamvar &key)
+         (let* ,(mapcar #'(lambda (x) (binary-class-slot->binding x streamvar)) slots)
+           (let ((,objectvar (make-instance
+                              ,@(or (cdr (assoc :dispatch options))
+                                    (error "Must supply :dispath form."))
+                              ,@(mapcan #'binary-class-slot->keyword-arg slots))))
+             (read-object ,objectvar ,streamvar)
+             ,objectvar))))))
 
 ;; Generic binary types
 
@@ -220,6 +220,31 @@
 
 (define-binary-type ul64 ()
   (unsigned-word :endianness :little-endian :word-size 64))
+
+(defun pack (num &key (word-size *word-size*) (endianness *endianness*) (sign *sign*))
+  (declare (number num)
+           ((or null (integer 1)) word-size)
+           ((member :little-endian :big-endian) endianness)
+           ((member t nil) sign))
+  (break)
+  (let* ((word-size
+           (cond (word-size word-size)
+                 ((zerop num) 8)
+                 ((plusp num) (ceiling (+ (integer-length num)
+                                          (if sign 1 0)) ;This feels off-by-one when (int-len num) % 8 == 0
+                                       8))
+                 ((minusp num) (if sign (ceiling (1+ (integer-length (1+ num))) 8) ;Here too kinda
+                                   (error "num does not fit within word-size")))))
+         (temp-type
+           (if sign
+               (define-binary-type nil ()
+                 (signed-word :word-size word-size :endianness endianness))
+               (define-binary-type nil ()
+                 (unsigned-word :word-size word-size :endianness endianness))))
+         (stream (flexi-streams:make-in-memory-output-stream)))
+
+    (write-value temp-type stream (make-instance temp-type :num num))
+    (get-output-stream-string stream)))
 
 ;; Test unsigned-big-word and unsigned-little-word
 (define-binary-class packing-test ()
