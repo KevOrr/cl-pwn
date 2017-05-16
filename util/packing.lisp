@@ -1,8 +1,21 @@
 (in-package :cl-pwn/util)
 
+(defparameter *word-size* 32)
+(defparameter *endianness* :little-endian)
+(defparameter *sign* nil)
+
 ;; Begin awesome PCL chapter 24 stuff
+
+;; Object stack for nested binary classes
 (defvar *in-progress-objects* nil)
 
+(defun current-binary-object () (first *in-progress-objects*))
+
+(defun parent-of-type (type)
+  (find-if #'(lambda (x) (typep x type)) *in-progress-objects*))
+
+
+;; Generic functions for reading/writing binary values
 (defgeneric read-value (type stream &key &allow-other-keys)
   (:documentation "Read a single value of the given type from the stream."))
 
@@ -18,6 +31,8 @@
   (assert (typep value type))
   (write-object value stream))
 
+
+;; Generic functions for reading/writing binary classes
 (defgeneric read-object (object stream)
   (:method-combination progn :most-specific-last)
   (:documentation "Fill in the slots of object from stream."))
@@ -36,10 +51,6 @@
   (let ((*in-progress-objects* (cons object *in-progress-objects*)))
     (call-next-method)))
 
-(defun current-binary-object () (first *in-progress-objects*))
-
-(defun parent-of-type (type)
-  (find-if #'(lambda (x) (typep x type)) *in-progress-objects*))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun mklist (x)
@@ -48,16 +59,6 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun normalize-slot-spec (spec)
     (list (first spec) (mklist (second spec)))))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun binary-class-slot->read-value (spec stream)
-    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
-      `(setf ,name (read-value ',type ,stream ,@args)))))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun binary-class-slot->write-value (spec stream)
-    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
-      `(write-value ',type ,stream ,name ,@args))))
 
 
 (defmacro with-gensyms ((&rest names) &body body)
@@ -111,6 +112,16 @@
              `(defmethod write-value ((,type (eql ',name)) ,out ,value &key ,@args)
                 ,@body)))))))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun binary-class-slot->read-value (spec stream)
+    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
+      `(setf ,name (read-value ',type ,stream ,@args)))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun binary-class-slot->write-value (spec stream)
+    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
+      `(write-value ',type ,stream ,name ,@args))))
+
 (defmacro define-generic-binary-class (name (&rest superclasses) slots read-method)
   (with-gensyms (objectvar streamvar)
     `(progn
@@ -162,75 +173,55 @@
                (read-object ,objectvar ,streamvar)
                ,objectvar))))))
 
-;; Testing above functions/macros
-(define-binary-type unsigned-big ((word-size 32))
+;; Generic binary types
+
+(define-binary-type unsigned-word ((word-size *word-size*) (endianness *endianness*))
   (:reader (in)
-           (let ((result 0)
-                 (max-byte-position (* 8 (floor (1- word-size) 8))))
-             (loop :for i :from max-byte-position :downto 0 :by 8 :do
-               (setf (ldb (byte 8 i) result) (read-byte in)))))
+           (let* ((result 0)
+                  (max-byte-position (* 8 (floor (1- word-size) 8)))
+                  (first-byte-offset (if (eq endianness :little-endian) 0 max-byte-position))
+                  (last-byte-offset (if (eq endianness :little-endian) max-byte-position 0))
+                  (step-by (if (eq endianness :little-endian) 8 -8)))
+             (loop :for i := first-byte-offset :then (+ i step-by)
+                   :do (setf (ldb (byte 8 i) result) (read-byte in))
+                   :until (= i last-byte-offset))
+             result))
   (:writer (out num)
-           (let ((max-byte-position (* 8 (floor (1- word-size) 8))))
-             (loop :for i :from max-byte-position :downto 0 :by 8 :do
-               (write-byte (ldb (byte 8 i) num) out)))))
+           (let* ((max-byte-position (* 8 (floor (1- word-size) 8)))
+                  (first-byte-offset (if (eq endianness :little-endian) 0 max-byte-position))
+                  (last-byte-offset (if (eq endianness :little-endian) max-byte-position 0))
+                  (step-by (if (eq endianness :little-endian) 8 -8)))
+             (loop :for i := first-byte-offset :then (+ i step-by)
+                   :do (write-byte (ldb (byte 8 i) num) out)
+                   :until (= i last-byte-offset)))))
+
+;; Some pre-baked types
 
 (define-binary-type ub8 ()
-  (unsigned-big :word-size 8))
+  (unsigned-word :endianness :big-endian :word-size 8))
 
 (define-binary-type ub16 ()
-  (unsigned-big :word-size 16))
+  (unsigned-word :endianness :big-endian :word-size 16))
 
 (define-binary-type ub32 ()
-  (unsigned-big :word-size 32))
+  (unsigned-word :endianness :big-endian :word-size 32))
 
 (define-binary-type ub64 ()
-  (unsigned-big :word-size 64))
-
-(define-binary-type unsigned-little ((word-size 32))
-  (:reader (in)
-           (let ((result 0)
-                 (max-byte-position (* 8 (floor (1- word-size) 8))))
-             (loop :for i :from 0 :to max-byte-position :by 8 :do
-               (setf (ldb (byte 8 i) result) (read-byte in)))))
-  (:writer (out num)
-           (let ((max-byte-position (* 8 (floor (1- word-size) 8))))
-             (loop :for i :from 0 :to max-byte-position :by 8 :do
-               (write-byte (ldb (byte 8 i) num) out)))))
+  (unsigned-word :endianness :big-endian :word-size 64))
 
 (define-binary-type ul8 ()
-  (unsigned-little :word-size 8))
+  (unsigned-word :endianness :little-endian :word-size 8))
 
 (define-binary-type ul16 ()
-  (unsigned-little :word-size 16))
+  (unsigned-word :endianness :little-endian :word-size 16))
 
 (define-binary-type ul32 ()
-  (unsigned-little :word-size 32))
+  (unsigned-word :endianness :little-endian :word-size 32))
 
 (define-binary-type ul64 ()
-  (unsigned-little :word-size 64))
+  (unsigned-word :endianness :little-endian :word-size 64))
 
-(define-binary-type iso-8859-1-string (length)
-  (:reader (in)
-           (let ((string (make-string length)))
-             (dotimes (i length)
-               (setf (char string i) (code-char (read-byte in))))
-             string))
-  (:writer (out string)
-           (dotimes (i length)
-             (write-byte (char-code (char string i)) out))))
-
-(define-binary-class id3-tag ()
-  ((identifier      (iso-8859-1-string :length 3))
-   (major-version   u1)
-   (revision        u1)
-   (flags           u1)
-   (size            id3-tag-size)
-   (frames          (id3-frames :tag-size size))))
-
-(define-binary-class id3-tag-extra (id3-tag)
-  ((extra-stuff     (id3-frames :tag-size size))))
-
-;; Test unsigned-bug and unsigned-little
+;; Test unsigned-big-word and unsigned-little-word
 (define-binary-class packing-test ()
   ((ul8 ul8)
    (ul16 ul16)
@@ -240,6 +231,19 @@
    (ub16 ub16)
    (ub32 ub32)
    (ub64 ub64)))
+
+;; Very much not portable
+#+sbcl
+(defun objects-equalp (&rest objects)
+  (flet ((object->hash-table (object)
+           (let ((ht (make-hash-table))
+                 (class-mo (class-of object)))
+             (loop :for slot :in (sb-mop:class-slots class-mo)
+                   :do (setf (gethash (sb-mop:slot-definition-name slot) ht)
+                             (sb-mop:slot-value-using-class class-mo object slot)))
+             ht)))
+    (and (apply #'eq (mapcar #'type-of objects))
+         (apply #'equalp (mapcar #'object->hash-table objects)))))
 
 (defun test-packing ()
   (let ((testobj (make-instance 'packing-test
@@ -263,4 +267,5 @@
       (let ((newobj (make-instance 'packing-test)))
         ;; TODO slots aren't getting filled
         (read-object newobj stream)
-        newobj))))
+        #+sbcl (assert (objects-equalp newobj testobj))
+        (list newobj testobj)))))
