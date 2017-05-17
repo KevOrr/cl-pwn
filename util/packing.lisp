@@ -16,6 +16,7 @@
 
 
 ;; Generic functions for reading/writing binary values
+
 (defgeneric read-value (type stream &key &allow-other-keys)
   (:documentation "Read a single value of the given type from the stream."))
 
@@ -33,6 +34,7 @@
 
 
 ;; Generic functions for reading/writing binary classes
+
 (defgeneric read-object (object stream)
   (:method-combination progn :most-specific-last)
   (:documentation "Fill in the slots of object from stream."))
@@ -51,6 +53,7 @@
   (let ((*in-progress-objects* (cons object *in-progress-objects*)))
     (call-next-method)))
 
+;; Convenience function/macros for main macros
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun mklist (x)
@@ -70,27 +73,21 @@
     (intern (string sym) :keyword)))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun binary-class-slot->defclass-slot (spec)
-    (let ((name (first spec)))
-      `(,name :initarg ,(as-keyword name) :accessor ,name))))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun direct-slots (name)
-    (copy-list (get name 'slots))))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun inherited-slots (name)
-    (loop :for super :in (get name 'superclasses)
-          :nconc (direct-slots super)
-          :nconc (inherited-slots super))))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun all-slots (name)
-    (nconc (direct-slots name) (inherited-slots name))))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
   (defun new-class-all-slots (slots superclasses)
-    (nconc (mapcan #'all-slots superclasses) (mapcar #'first slots))))
+    (labels ((direct-slots (name)
+               (copy-list (get name 'slots)))
+
+             (inherited-slots (name)
+               (loop :for super :in (get name 'superclasses)
+                     :nconc (direct-slots super)
+                     :nconc (inherited-slots super)))
+
+             (all-slots (name)
+               (nconc (direct-slots name) (inherited-slots name))))
+
+      (nconc (mapcan #'all-slots superclasses) (mapcar #'first slots)))))
+
+;; Main macros
 
 (defmacro define-binary-type (name (&rest args) &body spec)
   (let ((name (or name (gentemp))))
@@ -115,63 +112,62 @@
                   ,@body))
             ',name))))))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun binary-class-slot->read-value (spec stream)
-    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
-      `(setf ,name (read-value ',type ,stream ,@args)))))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun binary-class-slot->write-value (spec stream)
-    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
-      `(write-value ',type ,stream ,name ,@args))))
-
 (defmacro define-generic-binary-class (name (&rest superclasses) slots &body read-method)
-  (with-gensyms (objectvar streamvar)
-    `(progn
-       (eval-when (:compile-toplevel :load-toplevel :execute)
-         (setf (get ',name 'slots) ',(mapcar #'first slots))
-         (setf (get ',name 'superclasses) ',superclasses))
+  (flet ((binary-class-slot->defclass-slot (spec)
+           (let ((name (first spec)))
+             `(,name :initarg ,(as-keyword name) :accessor ,name)))
 
-       (defclass ,name ,superclasses
-         ,(mapcar #'binary-class-slot->defclass-slot slots))
+         (binary-class-slot->write-value (spec stream)
+           (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
+             `(write-value ',type ,stream ,name ,@args))))
 
-       ,(first read-method)
-
-       (defmethod write-object progn ((,objectvar ,name) ,streamvar)
-         (declare (ignorable ,streamvar))
-         (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
-           ,@(mapcar #'(lambda (x) (binary-class-slot->write-value x streamvar)) slots))))))
-
-(defmacro define-binary-class (name (&rest superclasses) &body body)
-  (let ((slots (first body)))
     (with-gensyms (objectvar streamvar)
-      `(define-generic-binary-class ,name ,superclasses ,slots
-         (defmethod read-object progn ((,objectvar ,name) ,streamvar)
+      `(progn
+         (eval-when (:compile-toplevel :load-toplevel :execute)
+           (setf (get ',name 'slots) ',(mapcar #'first slots))
+           (setf (get ',name 'superclasses) ',superclasses))
+
+         (defclass ,name ,superclasses
+           ,(mapcar #'binary-class-slot->defclass-slot slots))
+
+         ,(first read-method)
+
+         (defmethod write-object progn ((,objectvar ,name) ,streamvar)
            (declare (ignorable ,streamvar))
            (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
-             ,@(mapcar #'(lambda (x) (binary-class-slot->read-value x streamvar)) slots)))))))
+             ,@(mapcar #'(lambda (x) (binary-class-slot->write-value x streamvar)) slots)))))))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun binary-class-slot->binding (spec stream)
-    (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
-      `(,name (read-value ',type ,stream ,@args)))))
+(defmacro define-binary-class (name (&rest superclasses) &body body)
+  (flet ((binary-class-slot->read-value (spec stream)
+           (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
+             `(setf ,name (read-value ',type ,stream ,@args)))))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun binary-class-slot->keyword-arg (spec)
-    (let ((name (first spec)))
-      `(,(as-keyword name) ,name))))
+    (let ((slots (first body)))
+      (with-gensyms (objectvar streamvar)
+        `(define-generic-binary-class ,name ,superclasses ,slots
+           (defmethod read-object progn ((,objectvar ,name) ,streamvar)
+             (declare (ignorable ,streamvar))
+             (with-slots ,(new-class-all-slots slots superclasses) ,objectvar
+               ,@(mapcar #'(lambda (x) (binary-class-slot->read-value x streamvar)) slots))))))))
 
 (defmacro define-tagged-binary-class (name (&rest superclasses) slots &rest options)
-  (with-gensyms (typevar objectvar streamvar)
-    `(define-generic-binary-class ,name ,superclasses ,slots
-       (defmethod read-value ((,typevar (eql ',name)) ,streamvar &key)
-         (let* ,(mapcar #'(lambda (x) (binary-class-slot->binding x streamvar)) slots)
-           (let ((,objectvar (make-instance
-                              ,@(or (cdr (assoc :dispatch options))
-                                    (error "Must supply :dispath form."))
-                              ,@(mapcan #'binary-class-slot->keyword-arg slots))))
-             (read-object ,objectvar ,streamvar)
-             ,objectvar))))))
+  (flet ((binary-class-slot->binding (spec stream)
+           (destructuring-bind (name (type &rest args)) (normalize-slot-spec spec)
+             `(,name (read-value ',type ,stream ,@args))))
+         (binary-class-slot->keyword-arg (spec)
+           (let ((name (first spec)))
+             `(,(as-keyword name) ,name))))
+
+    (with-gensyms (typevar objectvar streamvar)
+      `(define-generic-binary-class ,name ,superclasses ,slots
+         (defmethod read-value ((,typevar (eql ',name)) ,streamvar &key)
+           (let* ,(mapcar #'(lambda (x) (binary-class-slot->binding x streamvar)) slots)
+             (let ((,objectvar (make-instance
+                                ,@(or (cdr (assoc :dispatch options))
+                                      (error "Must supply :dispath form."))
+                                ,@(mapcan #'binary-class-slot->keyword-arg slots))))
+               (read-object ,objectvar ,streamvar)
+               ,objectvar)))))))
 
 ;; Generic binary types
 
@@ -265,7 +261,8 @@
                        (pack num :word-size word-size :endianness :little-endian :sign nil)))
         (assert (every #'eql
                        big-endian-array
-                       (pack num :word-size word-size :endianness :big-endian :sign nil)))))))
+                       (pack num :word-size word-size :endianness :big-endian :sign nil))))))
+  t)
 
 ;; Test 'unsigned-big-word and 'unsigned-little-word
 (define-binary-class packing-test ()
@@ -313,4 +310,4 @@
       (let ((newobj (make-instance 'packing-test)))
         (read-object newobj stream)
         #+sbcl (assert (objects-equalp newobj testobj))
-        (list newobj testobj)))))
+        (values t newobj testobj)))))
