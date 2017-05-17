@@ -175,6 +175,7 @@
 
 ;; Generic binary types
 
+;; TODO this type should also accept signed words
 (define-binary-type unsigned-word ((word-size *word-size*) (endianness *endianness*))
   (:reader (in)
            (let* ((result 0)
@@ -221,32 +222,52 @@
 (define-binary-type ul64 ()
   (unsigned-word :endianness :little-endian :word-size 64))
 
+(defun calc-word-size (num sign)
+  (cond ((zerop num) 8)
+        (sign (ceiling (1+ (integer-length num)) 8))
+        ((not sign) (if (minusp num) (error "sign must be non-nil when (minusp num)")
+                        (ceiling (integer-length num) 8)))))
+
 (defun pack (num &key (word-size *word-size*) (endianness *endianness*) (sign *sign*))
-  (declare (number num)
+  (declare (integer num)
            ((or null (integer 1)) word-size)
            ((member :little-endian :big-endian) endianness)
            ((member t nil) sign))
-  (break)
-  (let* ((word-size
-           (cond (word-size word-size)
-                 ((zerop num) 8)
-                 ((plusp num) (ceiling (+ (integer-length num)
-                                          (if sign 1 0)) ;This feels off-by-one when (int-len num) % 8 == 0
-                                       8))
-                 ((minusp num) (if sign (ceiling (1+ (integer-length (1+ num))) 8) ;Here too kinda
-                                   (error "num does not fit within word-size")))))
-         (temp-type
-           (if sign
-               (define-binary-type nil ()
-                 (signed-word :word-size word-size :endianness endianness))
-               (define-binary-type nil ()
-                 (unsigned-word :word-size word-size :endianness endianness))))
-         (stream (flexi-streams:make-in-memory-output-stream)))
+  (let* ((word-size (or word-size (calc-word-size num sign)))
+         (stream (flexi-streams:make-in-memory-output-stream :element-type '(unsigned-byte 8))))
 
-    (write-value temp-type stream (make-instance temp-type :num num))
-    (get-output-stream-string stream)))
+    (if sign (error "Not implemented")
+        (write-value 'unsigned-word stream num :endianness endianness :word-size word-size))
 
-;; Test unsigned-big-word and unsigned-little-word
+    (flexi-streams:get-output-stream-sequence stream)))
+
+
+(defun unpack (packed &key (word-size *word-size*) (endianness *endianness*) (sign *sign*))
+  (declare ((or list (array (unsigned-byte 8))) packed)
+           ((or null (integer 1)) word-size)
+           ((member :little-endian :big-endian) endianness)
+           ((member t nil) sign))
+  (let* ((stream (flexi-streams:make-in-memory-input-stream packed)))
+
+    (if sign (error "Not implemented")
+        (read-value 'unsigned-word stream :endianness endianness :word-size word-size))))
+
+;; Test #'pack and #'unpack
+;; TODO test when word-size is nil
+(defun test-pack-unpack ()
+  (let ((tests '((#x01 8 #(#x01) #(#x01))
+                 (#x0102 16 #(#x02 #x01) #(#x01 #x02))
+                 (#x01020304 32 #(#x04 #x03 #x02 #x01) #(#x01 #x02 #x03 #x04)))))
+    (dolist (test tests)
+      (destructuring-bind (num word-size little-endian-array big-endian-array) test
+        (assert (every #'eql
+                       little-endian-array
+                       (pack num :word-size word-size :endianness :little-endian :sign nil)))
+        (assert (every #'eql
+                       big-endian-array
+                       (pack num :word-size word-size :endianness :big-endian :sign nil)))))))
+
+;; Test 'unsigned-big-word and 'unsigned-little-word
 (define-binary-class packing-test ()
   ((ul8 ul8)
    (ul16 ul16)
