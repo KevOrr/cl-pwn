@@ -291,7 +291,7 @@
     (and (apply #'eq (mapcar #'type-of objects))
          (apply #'equalp (mapcar #'object->hash-table objects)))))
 
-(defun test-packing ()
+(defun test-pcl-packing ()
   (let ((testobj (make-instance 'packing-test
                                 :ul8  #x01
                                 :ul16 #x0102
@@ -311,7 +311,6 @@
 
     (with-open-file (stream #p"testout" :element-type '(unsigned-byte 8))
       (let ((newobj (make-instance 'packing-test)))
-        ;; TODO slots aren't getting filled
         (read-object newobj stream)
         #+sbcl (assert (objects-equalp newobj testobj))
         (list newobj testobj)))))
